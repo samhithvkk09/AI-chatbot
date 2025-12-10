@@ -44,24 +44,60 @@ def run_conversation(user_message):
 	response = requests.post(url,json=data)
 
 	if response.status_code!=200:
-		print(response.text)
+		# Log full response for debugging and return a user-friendly message
+		print("Non-200 response from API:", response.status_code, response.text)
+		return "Sorry, I couldn't get a response from the model (non-200 status)."
 
-	t1=response.json()
-	if "content" not in t1.get("candidates")[0]:
-		print("Error: No content in response")
+	try:
+		t1 = response.json()
+	except ValueError:
+		print("Failed to parse JSON from response:", response.text)
+		return "Sorry, I couldn't parse the model response."
 
-	message = t1.get("candidates")[0].get("content").get("parts")
-	print("Message #######:",message)
-	if 'functionCall' in message[0]:
-		resp1=parse_function_response(message)
-		print("Actual response",resp1)
-		return resp1
+	# Validate structure before indexing
+	candidates = t1.get("candidates")
+	if not candidates or not isinstance(candidates, list):
+		print("Error: No candidates in response:", t1)
+		return "Sorry, I couldn't get a response from the model (no candidates)."
 
+	candidate = candidates[0]
+	if not isinstance(candidate, dict):
+		print("Error: Candidate is not an object:", candidate)
+		return "Sorry, I received an unexpected response format from the model."
 
+	content = candidate.get("content")
+	if not content or not isinstance(content, dict):
+		print("Error: No content in candidate:", candidate)
+		return "Sorry, model response did not include content."
 
-	#t2=t1.get("candidates")[0].get("content").get("parts")[0].get("text")
-	#print(t2)
-	#print("Now we are getting ",t1)
+	parts = content.get("parts")
+	if not parts or not isinstance(parts, list):
+		print("Error: No parts in content:", content)
+		return "Sorry, model content is missing parts."
+
+	print("Message #######:", parts)
+
+	# Handle function call responses
+	first_part = parts[0]
+	if isinstance(first_part, dict) and 'functionCall' in first_part:
+		try:
+			resp1 = parse_function_response(parts)
+			print("Actual response", resp1)
+			return resp1
+		except Exception as e:
+			print("Error while handling functionCall:", e)
+			return "Sorry, there was an error executing the requested function."
+
+	# Handle normal text responses: parts may be dicts with 'text' or plain strings
+	if isinstance(first_part, dict) and 'text' in first_part:
+		return first_part.get('text', '')
+
+	if isinstance(first_part, str):
+		return first_part
+
+	# Fallback: return a stringified version of parts
+	return str(parts)
+
 
 if __name__=="__main__":
 	user_message = "find the ip address of google.com"
